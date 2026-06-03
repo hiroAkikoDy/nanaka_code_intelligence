@@ -197,6 +197,57 @@ def tool_find_similar_code(query: str, top_k: int = 5) -> list[dict[str, Any]]:
     return find_similar_code(query, top_k=top_k)
 
 
+def _graph_search(query: str, project_root: str) -> list[dict[str, Any]]:
+    refs = find_references(query, project_root)
+    return refs.get("references", [])
+
+
+def _vector_search(query: str, top_k: int) -> list[dict[str, Any]]:
+    result = find_similar_code(query, top_k=top_k)
+    if result and "error" in result[0]:
+        return []
+    return result
+
+
+def _reciprocal_rank_fusion(
+    graph: list[dict[str, Any]],
+    vector: list[dict[str, Any]],
+    k: int = 60,
+) -> list[dict[str, Any]]:
+    scores: dict[str, float] = {}
+    for rank, item in enumerate(graph):
+        key = item.get("file", item.get("name", ""))
+        scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+    for rank, item in enumerate(vector):
+        key = item.get("file", "")
+        scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+    return [
+        {"file": f, "rrf_score": round(v, 6)}
+        for f, v in sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    ][:5]
+
+
+@mcp.tool()
+def tool_hybrid_search(
+    query: str,
+    project_root: str = ".",
+    top_k: int = 5,
+) -> dict[str, Any]:
+    graph_results = _graph_search(query, project_root)
+    vector_results = _vector_search(query, top_k)
+    hybrid_results = _reciprocal_rank_fusion(graph_results, vector_results)
+    note = "hybrid_resultsはRRF統合済み・最も信頼性が高い"
+    if not vector_results:
+        note = "vector_search unavailable: Neo4j未起動またはインデックス未作成。graph_resultsのみでRRF。"
+    return {
+        "query": query,
+        "graph_results": graph_results,
+        "vector_results": vector_results,
+        "hybrid_results": hybrid_results,
+        "note": note,
+    }
+
+
 @mcp.tool()
 def tool_get_file_history(
     file_path: str,

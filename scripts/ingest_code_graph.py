@@ -3,11 +3,22 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from neo4j import GraphDatabase
+
+_model: Any = None
+
+
+def _get_model() -> Any:
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _model
 
 
 class _CallVisitor(ast.NodeVisitor):
@@ -122,9 +133,13 @@ def ingest_project(
 
             for func in parsed["functions"]:
                 total_functions += 1
+                embedding = _get_model().encode(
+                    f"{func['name']} {func.get('calls', [])}"
+                ).tolist()
                 session.run(
                     """
                     MERGE (fn:Function {name: $name, file: $file, line: $line})
+                    SET fn.embedding = $embedding
                     WITH fn
                     MATCH (f:File {path: $file})
                     MERGE (f)-[:DEFINES]->(fn)
@@ -132,6 +147,7 @@ def ingest_project(
                     name=func["name"],
                     file=func["file"],
                     line=func["line"],
+                    embedding=embedding,
                 )
                 for called in func["calls"]:
                     session.run(
@@ -256,6 +272,109 @@ def create_neo4j_driver(uri: str, user: str, password: str) -> Any:
             file=sys.stderr,
         )
         sys.exit(1)
+
+
+def update_incrementally(
+    project_root: str = ".",
+    driver: Any = None,
+) -> dict[str, Any]:
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "HEAD~1"],
+        capture_output=True,
+        text=True,
+        cwd=project_root,
+    )
+    if result.returncode != 0:
+        return {"updated_files": [], "skipped": [], "error": "Not a git repository or git command failed."}
+
+    changed_py = [f for f in result.stdout.splitlines() if f.endswith(".py")]
+    if not changed_py:
+        return {"updated_files": [], "skipped": [], "error": None}
+
+    if driver is None:
+        uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+        user = os.environ.get("NEO4J_USER", "neo4j")
+        password = os.environ.get("NEO4J_PASSWORD", "")
+        try:
+            driver = create_neo4j_driver(uri, user, password)
+        except Exception:
+            return {
+                "updated_files": [],
+                "skipped": [],
+                "error": "Cannot connect to Neo4j. Run ingest_code_graph.py first.",
+            }
+
+    updated: list[str] = []
+    root = Path(project_root)
+
+    with driver.session() as session:
+        for rel_path in changed_py:
+            fp = root / rel_path
+            session.run(
+                "MATCH (f:File {path: $path}) DETACH DELETE f",
+                path=rel_path,
+            )
+
+            parsed = parse_python_file(fp)
+
+            session.run(
+                "MERGE (f:File {path: $path}) SET f.name = $name",
+                path=rel_path,
+                name=fp.name,
+            )
+
+            for func in parsed["functions"]:
+                session.run(
+                    """
+                    MERGE (fn:Function {name: $name, file: $file, line: $line})
+                    WITH fn
+                    MATCH (f:File {path: $file})
+                    MERGE (f)-[:DEFINES]->(fn)
+                    """,
+                    name=func["name"],
+                    file=func["file"],
+                    line=func["line"],
+                )
+                for called in func["calls"]:
+                    session.run(
+                        """
+                        MATCH (caller:Function {name: $caller_name, file: $caller_file})
+                        MERGE (callee:Function {name: $callee_name})
+                        MERGE (caller)-[:CALLS]->(callee)
+                        """,
+                        caller_name=func["name"],
+                        caller_file=func["file"],
+                        callee_name=called,
+                    )
+
+            for cls in parsed["classes"]:
+                session.run(
+                    """
+                    MERGE (c:Class {name: $name, file: $file, line: $line})
+                    WITH c
+                    MATCH (f:File {path: $file})
+                    MERGE (f)-[:DEFINES]->(c)
+                    """,
+                    name=cls["name"],
+                    file=cls["file"],
+                    line=cls["line"],
+                )
+
+            for imp in parsed["imports"]:
+                session.run(
+                    """
+                    MERGE (i:Import {name: $name, file: $file})
+                    WITH i
+                    MATCH (f:File {path: $file})
+                    MERGE (f)-[:IMPORTS]->(i)
+                    """,
+                    name=imp["name"],
+                    file=imp["file"],
+                )
+
+            updated.append(rel_path)
+
+    return {"updated_files": updated, "skipped": [], "error": None}
 
 
 def main() -> None:

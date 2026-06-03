@@ -2,12 +2,45 @@ from __future__ import annotations
 
 import ast
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from neo4j import GraphDatabase
 
 mcp: FastMCP = FastMCP("code-intelligence")
+
+_embed_model: Any = None
+_neo4j_driver: Any = None
+_neo4j_driver_initialized: bool = False
+
+
+def _get_embed_model() -> Any:
+    global _embed_model
+    if _embed_model is None:
+        from sentence_transformers import SentenceTransformer
+        _embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _embed_model
+
+
+def _get_neo4j_driver() -> Any:
+    global _neo4j_driver, _neo4j_driver_initialized
+    if _neo4j_driver_initialized:
+        return _neo4j_driver
+    _neo4j_driver_initialized = True
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    user = os.environ.get("NEO4J_USER", "neo4j")
+    password = os.environ.get("NEO4J_PASSWORD")
+    if not password:
+        return None
+    try:
+        driver = GraphDatabase.driver(uri, auth=(user, password))
+        driver.verify_connectivity()
+        _neo4j_driver = driver
+    except Exception:
+        _neo4j_driver = None
+    return _neo4j_driver
 
 
 def get_file_structure(file_path: str) -> dict[str, Any]:
@@ -119,6 +152,31 @@ def get_impact_analysis(file_path: str, project_root: str) -> dict[str, Any]:
     return result
 
 
+def find_similar_code(query: str, top_k: int = 5) -> list[dict[str, Any]]:
+    driver = _get_neo4j_driver()
+    if driver is None:
+        return [
+            {
+                "error": "Cannot connect to Neo4j or vector index not found. Run setup_vector_index.py first."
+            }
+        ]
+    query_embedding = _get_embed_model().encode(query).tolist()
+    with driver.session() as session:
+        result = session.run(
+            """
+            CALL db.index.vector.queryNodes(
+                'code_embeddings', $top_k, $embedding
+            )
+            YIELD node, score
+            RETURN node.name AS function, node.file AS file, score
+            ORDER BY score DESC
+            """,
+            top_k=top_k,
+            embedding=query_embedding,
+        )
+        return [dict(r) for r in result]
+
+
 @mcp.tool()
 def tool_get_file_structure(file_path: str) -> dict[str, Any]:
     return get_file_structure(file_path)
@@ -132,6 +190,47 @@ def tool_find_references(symbol_name: str, project_root: str) -> dict[str, Any]:
 @mcp.tool()
 def tool_get_impact_analysis(file_path: str, project_root: str) -> dict[str, Any]:
     return get_impact_analysis(file_path, project_root)
+
+
+@mcp.tool()
+def tool_find_similar_code(query: str, top_k: int = 5) -> list[dict[str, Any]]:
+    return find_similar_code(query, top_k=top_k)
+
+
+@mcp.tool()
+def tool_get_file_history(
+    file_path: str,
+    max_commits: int = 10,
+) -> list[dict[str, Any]]:
+    result = subprocess.run(
+        [
+            "git", "log",
+            f"--max-count={max_commits}",
+            "--follow",
+            "--format=%H|%ai|%s",
+            "--",
+            file_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        return [{"error": "Not a git repository or file not found."}]
+
+    commits: list[dict[str, Any]] = []
+    for line in result.stdout.splitlines():
+        if "|" not in line:
+            continue
+        parts = line.split("|", 2)
+        if len(parts) == 3:
+            commits.append({
+                "hash": parts[0][:8],
+                "date": parts[1],
+                "message": parts[2],
+            })
+
+    return commits
 
 
 if __name__ == "__main__":

@@ -7,6 +7,9 @@ mcp>=1.0.0
 # Neo4j Pythonドライバ（Issue #4・#5で使用）
 neo4j>=5.0.0
 
+# ベクトル埋め込み（Issue #8）
+sentence-transformers>=2.0.0
+
 # テスト
 pytest>=7.0.0
 pytest-asyncio>=0.21.0

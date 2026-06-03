@@ -178,7 +178,10 @@ class TestIngestProject:
         mock_driver.session.return_value.__enter__ = MagicMock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = MagicMock(return_value=False)
 
-        stats = ingest_project(tmp_path, mock_driver)
+        mock_model = MagicMock()
+        mock_model.encode.return_value.tolist.return_value = [0.1] * 384
+        with patch("scripts.ingest_code_graph._get_model", return_value=mock_model):
+            stats = ingest_project(tmp_path, mock_driver)
 
         assert stats["files"] == 1
         assert stats["functions"] == 2
@@ -194,7 +197,10 @@ class TestIngestProject:
         mock_driver.session.return_value.__enter__ = MagicMock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = MagicMock(return_value=False)
 
-        ingest_project(tmp_path, mock_driver, clear=True)
+        mock_model = MagicMock()
+        mock_model.encode.return_value.tolist.return_value = [0.1] * 384
+        with patch("scripts.ingest_code_graph._get_model", return_value=mock_model):
+            ingest_project(tmp_path, mock_driver, clear=True)
 
         first_call_query = mock_session.run.call_args_list[0][0][0]
         assert "MATCH" in first_call_query or "DETACH" in first_call_query

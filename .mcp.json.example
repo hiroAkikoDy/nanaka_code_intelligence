@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "code-intelligence": {
+      "command": "python",
+      "args": [
+        "/path/to/nanaka-code-intelligence/mcp_servers/code_intelligence_server.py"
+      ],
+      "description": "ast版：ファイル構造取得・シンボル参照・影響範囲分析"
+    },
+    "lsp-server": {
+      "command": "python",
+      "args": [
+        "/path/to/nanaka-code-intelligence/mcp_servers/lsp_server.py"
+      ],
+      "description": "LSP版：型チェック・診断情報取得（pyrightが必要）"
+    },
+    "code-graph-server": {
+      "command": "python",
+      "args": [
+        "/path/to/nanaka-code-intelligence/mcp_servers/code_graph_server.py"
+      ],
+      "description": "Neo4j版：グラフベースの影響範囲分析（Neo4j起動が必要）"
+    }
+  }
+}

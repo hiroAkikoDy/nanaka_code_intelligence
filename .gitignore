@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 仮想環境
+.venv/
+venv/
+env/
+
+# テスト・カバレッジ
+.pytest_cache/
+.coverage
+htmlcov/
+
+# pyright
+pyrightconfig.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MCP設定（実際の設定はexampleを参考に各自作成）
+.mcp.json
+
+# Neo4j認証情報
+neo4j_credentials.txt
+
+# Claude Code プロジェクト設定
+.claude/

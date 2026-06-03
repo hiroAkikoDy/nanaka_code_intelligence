@@ -1,0 +1,12 @@
+# nanaka-code-intelligence 依存パッケージ
+# Python 3.10以上が必要
+
+# MCP SDK（stdio方式）
+mcp>=1.0.0
+
+# Neo4j Pythonドライバ（Issue #4・#5で使用）
+neo4j>=5.0.0
+
+# テスト
+pytest>=7.0.0
+pytest-asyncio>=0.21.0

@@ -9,6 +9,8 @@ from mcp_servers.code_graph_server import (
     get_call_graph,
     get_impact_analysis_graph,
     mcp,
+    _get_driver,
+    _reset_driver,
 )
 
 
@@ -84,6 +86,7 @@ class TestGetImpactAnalysisGraphError:
         assert result["changed_file"] == "path/to/file.py"
         assert result["source"] == "error"
         assert "error" in result
+        assert "fallback" in result
         assert result["defines"] == []
         assert result["impacted_files"] == []
         assert result["count"] == 0
@@ -152,6 +155,7 @@ class TestGetCallGraphError:
         assert result["depth"] == 2
         assert result["source"] == "error"
         assert "error" in result
+        assert "fallback" in result
         assert result["calls"] == []
         assert result["count"] == 0
 
@@ -181,3 +185,44 @@ class TestMcpServerTypeAnnotation:
         from mcp.server.fastmcp import FastMCP
 
         assert isinstance(mcp, FastMCP)
+
+
+class TestGetDriverReturnsNoneWhenNeo4jDown:
+    def test_get_driver_returns_none_when_neo4j_down(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_URI", "bolt://localhost:9999")
+        _reset_driver()
+        result = _get_driver()
+        assert result is None
+
+
+class TestGetImpactAnalysisGraphNeo4jDown:
+    def test_returns_error_dict_when_neo4j_down(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_URI", "bolt://localhost:9999")
+        _reset_driver()
+        result = get_impact_analysis_graph("test.py")
+        assert "error" in result
+        assert "fallback" in result
+        assert result["source"] == "error"
+
+
+class TestGetCallGraphNeo4jDown:
+    def test_returns_error_dict_when_neo4j_down(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_URI", "bolt://localhost:9999")
+        _reset_driver()
+        result = get_call_graph("test_function")
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "fallback" in result
+        assert result["source"] == "error"
+
+
+class TestDriverConnectionAttemptedWithEmptyPassword:
+    def test_connection_attempted_even_without_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+        _reset_driver()
+
+        with patch("neo4j.GraphDatabase.driver", side_effect=Exception("Connection refused")) as mock_driver:
+            result = _get_driver()
+
+        mock_driver.assert_called_once()
+        assert result is None

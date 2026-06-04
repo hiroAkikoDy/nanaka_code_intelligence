@@ -1,34 +1,48 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from neo4j import GraphDatabase
 
 mcp: FastMCP = FastMCP("code-graph")
 
 NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "nanaka-code-graph")
 
+print(f"[DEBUG] NEO4J_URI={os.environ.get('NEO4J_URI', 'NOT SET')}", file=sys.stderr)
+print(f"[DEBUG] NEO4J_USER={os.environ.get('NEO4J_USER', 'NOT SET')}", file=sys.stderr)
+print(f"[DEBUG] NEO4J_PASSWORD={'SET' if os.environ.get('NEO4J_PASSWORD') else 'NOT SET'}", file=sys.stderr)
+print(f"[DEBUG] NEO4J_DATABASE={NEO4J_DATABASE}", file=sys.stderr)
+
 _driver: Any = None
-_driver_initialized: bool = False
+
+
+def _reset_driver() -> None:
+    global _driver
+    if _driver is not None:
+        try:
+            _driver.close()
+        except Exception:
+            pass
+    _driver = None
 
 
 def _get_driver() -> Any:
-    global _driver, _driver_initialized
-    if _driver_initialized:
+    global _driver
+    if _driver is not None:
         return _driver
-    _driver_initialized = True
     uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
     user = os.environ.get("NEO4J_USER", "neo4j")
-    password = os.environ.get("NEO4J_PASSWORD")
-    if not password:
-        return None
+    password = os.environ.get("NEO4J_PASSWORD", "")
     try:
+        from neo4j import GraphDatabase
+
         driver = GraphDatabase.driver(uri, auth=(user, password))
         driver.verify_connectivity()
         _driver = driver
-    except Exception:
+    except Exception as e:
+        print(f"[DEBUG] Neo4j connection failed: {e}", file=sys.stderr)
         _driver = None
     return _driver
 
@@ -42,7 +56,8 @@ def get_impact_analysis_graph(file_path: str) -> dict[str, Any]:
             "impacted_files": [],
             "count": 0,
             "source": "error",
-            "error": "Cannot connect to Neo4j. Run ingest_code_graph.py first.",
+            "error": "Neo4j未起動または接続失敗",
+            "fallback": "tool_get_impact_analysis（ast版）を使用してください",
         }
 
     with driver.session(database=NEO4J_DATABASE) as session:
@@ -100,7 +115,8 @@ def get_call_graph(function_name: str, depth: int = 2) -> dict[str, Any]:
             "calls": [],
             "count": 0,
             "source": "error",
-            "error": "Cannot connect to Neo4j. Run ingest_code_graph.py first.",
+            "error": "Neo4j未起動または接続失敗",
+            "fallback": "tool_find_references（ast版）を使用してください",
         }
 
     with driver.session(database=NEO4J_DATABASE) as session:

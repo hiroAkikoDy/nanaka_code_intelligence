@@ -10,6 +10,8 @@ from typing import Any
 
 from neo4j import GraphDatabase
 
+NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "nanaka-code-graph")
+
 _model: Any = None
 
 
@@ -117,7 +119,7 @@ def ingest_project(
     total_functions: int = 0
     total_classes: int = 0
 
-    with driver.session() as session:
+    with driver.session(database=NEO4J_DATABASE) as session:
         if clear:
             session.run("MATCH (n) DETACH DELETE n")
 
@@ -307,7 +309,7 @@ def update_incrementally(
     updated: list[str] = []
     root = Path(project_root)
 
-    with driver.session() as session:
+    with driver.session(database=NEO4J_DATABASE) as session:
         for rel_path in changed_py:
             fp = root / rel_path
             session.run(

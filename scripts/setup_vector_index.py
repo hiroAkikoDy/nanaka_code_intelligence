@@ -6,9 +6,11 @@ from typing import Any
 
 from neo4j import GraphDatabase
 
+NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "nanaka-code-graph")
+
 
 def create_vector_index(driver: Any) -> None:
-    with driver.session() as session:
+    with driver.session(database=NEO4J_DATABASE) as session:
         session.run(
             """
             CREATE VECTOR INDEX code_embeddings

@@ -8,6 +8,8 @@ from neo4j import GraphDatabase
 
 mcp: FastMCP = FastMCP("code-graph")
 
+NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "nanaka-code-graph")
+
 _driver: Any = None
 _driver_initialized: bool = False
 
@@ -43,7 +45,7 @@ def get_impact_analysis_graph(file_path: str) -> dict[str, Any]:
             "error": "Cannot connect to Neo4j. Run ingest_code_graph.py first.",
         }
 
-    with driver.session() as session:
+    with driver.session(database=NEO4J_DATABASE) as session:
         define_result = session.run(
             """
             MATCH (f:File {path: $file_path})-[:DEFINES]->(sym)
@@ -101,7 +103,7 @@ def get_call_graph(function_name: str, depth: int = 2) -> dict[str, Any]:
             "error": "Cannot connect to Neo4j. Run ingest_code_graph.py first.",
         }
 
-    with driver.session() as session:
+    with driver.session(database=NEO4J_DATABASE) as session:
         result = session.run(
             """
             MATCH path = (fn:Function {name: $function_name})-[:CALLS*1..$depth]->(callee)

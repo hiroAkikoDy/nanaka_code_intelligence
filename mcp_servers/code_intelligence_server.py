@@ -11,6 +11,8 @@ from neo4j import GraphDatabase
 
 mcp: FastMCP = FastMCP("code-intelligence")
 
+NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "nanaka-code-graph")
+
 _embed_model: Any = None
 _neo4j_driver: Any = None
 _neo4j_driver_initialized: bool = False
@@ -161,7 +163,7 @@ def find_similar_code(query: str, top_k: int = 5) -> list[dict[str, Any]]:
             }
         ]
     query_embedding = _get_embed_model().encode(query).tolist()
-    with driver.session() as session:
+    with driver.session(database=NEO4J_DATABASE) as session:
         result = session.run(
             """
             CALL db.index.vector.queryNodes(
